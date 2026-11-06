@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>React Question Probe</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 24px;
+    font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #14161a; color: #d6dae0;
+  }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 8px; color: #fff; }
+  h2 { font-size: 13px; font-weight: 600; margin: 26px 0 8px; color: #aeb5bf; text-transform: uppercase; letter-spacing: .04em; }
+  p { margin: 0 0 14px; color: #8b929c; max-width: 74ch; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  button, .bm {
+    display: inline-block; padding: 8px 14px; border-radius: 5px;
+    border: 1px solid #2c3138; background: #23272e; color: #d6dae0;
+    font: inherit; cursor: pointer; text-decoration: none;
+  }
+  button:hover, .bm:hover { background: #2b3038; }
+  button:disabled { opacity: .45; cursor: default; }
+  .bm { background: #1f2b3d; border-color: #2f4152; }
+  pre {
+    margin: 0 0 14px; padding: 12px; max-height: 340px; overflow: auto;
+    background: #1a1d22; border: 1px solid #2c3138; border-radius: 5px;
+    white-space: pre; color: #9fe8b0; font: inherit;
+  }
+  .out { color: #9fe8b0; white-space: pre-wrap; word-break: break-word; }
+  .out.err { color: #ff9d8a; }
+  code { background: #23272e; padding: 1px 5px; border-radius: 3px; color: #d6dae0; }
+</style>
+</head>
+<body>
+
+<h1>React Question Probe</h1>
+<p>
+  Walks React fibers upward from DOM nodes to find a question object and reports its shape.
+  Run it <strong>on the target page</strong>, not from here — this file is only a dispenser.
+</p>
+
+<div class="bar">
+  <button id="copy">Copy script</button>
+  <a class="bm" id="bm" href="#" draggable="true">Drag to bookmarks bar</a>
+  <button id="run">Run on this page</button>
+</div>
+
+<h2>Usage</h2>
+<p>
+  Click <code>Copy script</code> and paste into DevTools console on the target tab, or drag the
+  bookmarklet to your bookmarks bar and click it while on the target page. Then call
+  <code>probeQuestion()</code> or <code>probeQuestion({ all: true })</code>.
+</p>
+
+<h2>Payload</h2>
+<pre id="payload-view"></pre>
+
+<h2>Output</h2>
+<pre class="out" id="out">idle</pre>
+
+<script type="text/plain" id="payload">
+(function () {
+  'use strict';
+
+  var FIBER_PREFIX = '__reactFiber$';
+  var MAX_DEPTH = 100;
+  var ROOT_SELECTOR = 'div';
+
+  function getFiberKey(el) {
+    return Object.keys(el).find(function (k) { return k.indexOf(FIBER_PREFIX) === 0; });
+  }
+
+  function readQuestion(fiber) {
+    var sn = fiber.stateNode;
+    return (sn && sn.state && sn.state.question) ||
+           (sn && sn.props && sn.props.client && sn.props.client.question) ||
+           null;
+  }
+
+  function summarize(q) {
+    return {
+      qType: q.qType,
+      answers: q.answers ? q.answers.length : undefined,
+      correct: q.correctAnswers ? q.correctAnswers.length : undefined
+    };
+  }
+
+  function walkUpFrom(el) {
+    var key = getFiberKey(el);
+    if (!key) return null;
+    var fiber = el[key];
+    var depth = 0;
+    while (fiber && depth < MAX_DEPTH) {
+      var q = readQuestion(fiber);
+      if (q) return summarize(q);
+      fiber = fiber.return;
+      depth++;
+    }
+    return null;
+  }
+
+  function probe(options) {
+    var opts = options || {};
+    var root = opts.root || document;
+    var matches = [];
+    var seen = {};
+
+    var nodes = root.querySelectorAll(ROOT_SELECTOR);
+    for (var i = 0; i < nodes.length; i++) {
+      var hit = walkUpFrom(nodes[i]);
+      if (!hit) continue;
+      var sig = hit.qType + ':' + hit.answers + ':' + hit.correct;
+      if (seen[sig]) continue;
+      seen[sig] = true;
+      matches.push(hit);
+      if (!opts.all) break;
+    }
+    return { found: matches.length > 0, matches: matches };
+  }
+
+  window.probeQuestion = probe;
+  console.log('[probe]', probe());
+})();
+</script>
+
+<script>
+(function () {
+  'use strict';
+
+  var payload = document.getElementById('payload').textContent.trim();
+  var out = document.getElementById('out');
+
+  document.getElementById('payload-view').textContent = payload;
+
+  document.getElementById('copy').addEventListener('click', function () {
+    var btn = this;
+    navigator.clipboard.writeText(payload).then(function () {
+      btn.textContent = 'Copied';
+      setTimeout(function () { btn.textContent = 'Copy script'; }, 1400);
+    }, function () {
+      btn.textContent = 'Copy failed';
+    });
+  });
+
+  document.getElementById('bm').href = 'javascript:' + encodeURIComponent(payload);
+
+  document.getElementById('run').addEventListener('click', function () {
+    try {
+      var fn = new Function(payload);
+      fn();
+      out.className = 'out';
+      out.textContent = 'ran — check console for output';
+    } catch (e) {
+      out.className = 'out err';
+      out.textContent = String(e && e.message || e);
+    }
+  });
+})();
+</script>
+</body>
+</html>
